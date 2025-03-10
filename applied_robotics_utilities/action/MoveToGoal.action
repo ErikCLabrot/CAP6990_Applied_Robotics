@@ -1,0 +1,12 @@
+#Goal
+geometry_msgs/Point target_point
+
+---
+#Result
+bool success
+bool obstacle_detected
+geometry_msgs/Point obstacle_position
+
+---
+#Feedback
+geometry_msgs/Point current_pos
