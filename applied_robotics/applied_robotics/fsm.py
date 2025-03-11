@@ -44,6 +44,15 @@ class FSM():
     """    
     def __init__(self):
 
+        #Buffer for passing variables between states without relying on FSM variables
+        self.data_buffer = {}
+        temp_buffer = {"obstacles" : []}
+        self.data_buffer.update(temp_buffer)
+        temp_buffer = {"path" : []}
+        self.data_buffer.update(temp_buffer)
+        temp_buffer = {"obstacle_centers" : []}
+        self.data_buffer.update(temp_buffer)
+
         self.wp_list = []
         self.obs_list = []
         self.robot_bbox = Polygon([(-1.5, -1.0), (-1.5, 1.0), (1.5, 1.0), (1.5, -1.0)])
@@ -74,7 +83,9 @@ class FSM():
                 self.get_next_state()
             status = self.current_state.get_status()
             if status == "ERROR" or status == "FINISHED":
-                self.transition_code = self.current_state.exit_state()
+                self.transition_code, data = self.current_state.exit_state()
+                if data is not None:
+                    self.data_buffer.update(data)
                 self.get_next_state()
 
     def get_next_state(self):
@@ -85,7 +96,7 @@ class FSM():
         """
 
         if self.current_state is None:
-            self.current_state = PlanState(fsm=self,
+            self.current_state = PlanState(data = self.data_buffer, 
                                            state_name= 'plan_state',
                                            goal_pos=self.goal_position,
                                            map_size=self.world_size,
@@ -104,10 +115,10 @@ class FSM():
         next_state = self.state_map[current_class][self.transition_code]
 
         if next_state == MoveState:
-            self.current_state = MoveState(fsm = self, state_name='move_state')
+            self.current_state = MoveState(state_name='move_state', data_buffer=self.data_buffer)
 
         elif next_state == PlanState:
-                        self.current_state = PlanState(fsm=self,
+                        self.current_state = PlanState(data = self.data_buffer,
                                            state_name= 'plan_state',
                                            goal_pos=self.goal_position,
                                            map_size=self.world_size,
@@ -117,7 +128,7 @@ class FSM():
                                            max_w=self.max_robot_angular)
 
         elif next_state == IdleState:
-            self.current_state = IdleState(self)
+            self.current_state = IdleState("idle_state")
 
         self.execute_current_state()
 
