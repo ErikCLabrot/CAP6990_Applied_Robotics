@@ -52,8 +52,8 @@ class RRTPlanner:
         self.start = start #(x,y,theta)
         self.goal = goal
         self.map_size = map_size
-        self.obs_points = obs
-        self.obs = []
+        #self.obs_points = obs
+        self.obs = obs
         self.robot_bb = robot_bb
         self.dt = dt
         self.max_it = max_it
@@ -189,7 +189,7 @@ class RRTPlanner:
         if self.path_found is True:
             return
 
-        self.generate_map()
+        #self.generate_map()
 
         for i in range(self.max_it):
             x_rand = self.random_state()

@@ -1,0 +1,8 @@
+float32 alpha_k
+float32 rmin
+float32 avg_velocity
+float32 lower_radius
+float32 upper_radius
+geometry_msgs/Polygon[] obstacle_list
+---
+bool success

@@ -15,11 +15,13 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from threading import Lock
 from geometry_msgs.msg import Point, PoseArray
+from shapely.geometry import Polygon
 from applied_robotics.fsm_state import FSMState
 from applied_robotics_utilities.action import MoveToGoal
+from applied_robotics_utilities.srv import MoveStateCancel
 
 class MoveState(FSMState):
-    def __init__(self, state_name, fsm, action_topic='/move_to_goal'):
+    def __init__(self, state_name, data_buffer, action_topic='/move_to_goal'):
         """
         Handles robot movement to waypoints using an action client, detects obstacles to trigger replanning
 
@@ -47,11 +49,13 @@ class MoveState(FSMState):
             goal_handle: Handle for the current action goal
         """
         super().__init__(state_name)
-        self.fsm = fsm
+        self.data_buffer = data_buffer
+        self.return_data = None
         self.obs_lock = Lock()
 
         self.obs_sub = self.create_subscription(PoseArray, '/obstacles', self.obs_cb, 1)
         self.action_client = ActionClient(self, MoveToGoal, action_topic)
+        #self.cancel_service = self.create_service(MoveStateCancel, 'move_state_cancel', self.cancel_service_callback)
 
         self.transition_code = None
         self.status = None
@@ -104,7 +108,7 @@ class MoveState(FSMState):
 
         #self.get_logger().info(f"MoveState instance id: {id(self)}")
 
-        if len(self.fsm.wp_list) == 0:
+        if len(self.data_buffer["path"]) == 0:
             self.transition_code = "IDLE"
 
         with self.obs_lock:
@@ -115,7 +119,7 @@ class MoveState(FSMState):
             self.transition_code = "NEXT_WP"
 
         #self.get_logger().info(f'Movestate returning tcode: {self.transition_code}')
-        return self.transition_code
+        return self.transition_code, self.return_data
 
     def send_goal(self):
         """
@@ -123,15 +127,17 @@ class MoveState(FSMState):
 
         Args: None
         """
-        if not self.fsm.wp_list:
+        if not self.data_buffer["path"]:
             self.status = "FINISHED"
             return
 
-        wp = self.fsm.wp_list.pop(0)
+        wp = self.data_buffer["path"].pop(0)
 
         goal_msg = MoveToGoal.Goal()
-        goal_msg.target_point.x = float(wp[0])
-        goal_msg.target_point.y = float(wp[1])
+        #goal_msg.target_point.x = float(wp[0])
+        #goal_msg.target_point.y = float(wp[1])
+
+        goal_msg.target_point = wp
 
         send_goal_future = self.action_client.send_goal_async(goal_msg)
         send_goal_future.add_done_callback(self.goal_response_cb)
@@ -173,6 +179,7 @@ class MoveState(FSMState):
 
         self.status = "FINISHED"
 
+    
     def obs_cb(self, obs_msg):
         """
         Callback for obstacle detection, triggers goal cancellation if needed
@@ -180,13 +187,27 @@ class MoveState(FSMState):
         Args:
             obs_msg: PoseArray containing detected obstacles
         """
+        obs_coords = self.data_buffer["obstacle_centers"]
+        obstacles = self.data_buffer["obstacles"]
+        half_size = 0.5
+        #self.get_logger().info(f"{obs_list}")
         for pose in obs_msg.poses:
             pos = (round(pose.position.x, 2), round(pose.position.y, 2))
 
             # Check if this position is already known
-            if pos not in self.fsm.obs_list:
-                self.fsm.obs_list.append(pos)
+            if pos not in obs_coords:
+                obs_coords.append(pos)
                 self.get_logger().info(f"New obstacle detected at {pos}")
+                x = pos[0]
+                y = pos[1]
+                poly = Polygon([
+                        (x - half_size, y - half_size),
+                        (x + half_size, y - half_size),
+                        (x + half_size, y + half_size),
+                        (x - half_size, y + half_size)
+                    ])
+                obstacles.append(poly)
+
                 with self.obs_lock:
                     self.obs_detected = True
                 #self.get_logger().info(f"MoveState instance id: {id(self)}")
@@ -195,6 +216,8 @@ class MoveState(FSMState):
                 if self.obs_detected and self.goal_handle is not None:
                     cancel_future = self.goal_handle.cancel_goal_async()
                     cancel_future.add_done_callback(self.cancel_response_cb)
+        self.return_data = {"obstacles" : obstacles}
+    
 
     def cancel_response_cb(self, future):
         """
@@ -207,3 +230,16 @@ class MoveState(FSMState):
         cancel_response = future.result()
         if len(cancel_response.goals_canceling) > 0:
             self.get_logger().info("Goal successfully canceled")
+
+    '''
+    #Bridging old behavior for now, rewrite to de-scope obstacle detection details from motion
+    #Should just be told to cancel, and why. Shouldn't know where obstacles are. 
+    #For now, only reason to cancel is new obstacle
+    def cancel_service_callback(self, request, response):
+        self.obs_detected = True
+        self.obs = {"obstacles" : request.obstacle_list}
+        if self.goal_handle is not None:
+            cancel_future = self.goal_handle.cancel_goal_async()
+            cancel_future.add_done_callback(self.cancel_response_cb)
+    '''
+

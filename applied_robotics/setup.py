@@ -50,6 +50,7 @@ setup(
         'move_server = applied_robotics.move_server:main',
         'fsm_node = applied_robotics.fsm:main',
         'aruco_node = applied_robotics.aruco_detector:main',
+        'ces_service = applied_robotics.ces_service:main'
         ],
     },
 )

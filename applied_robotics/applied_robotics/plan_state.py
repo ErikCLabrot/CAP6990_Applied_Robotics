@@ -13,9 +13,12 @@ import math
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from tf2_msgs.msg import TFMessage
-from geometry_msgs.msg import Point, Twist, Quaternion, TransformStamped
+from geometry_msgs.msg import Point, Twist, Quaternion, TransformStamped, Point32
+from geometry_msgs.msg import Polygon as GeometryPolygon
+from shapely.geometry import Polygon as ShapelyPolygon
 from applied_robotics.fsm_state import FSMState
 from applied_robotics.rrt_planner import RRTPlanner
+from applied_robotics_utilities.srv import CESPathOptimize, CESOptimizeConfigure
 import matplotlib.pyplot as plt
 
 class PlanState(FSMState):
@@ -42,23 +45,28 @@ class PlanState(FSMState):
         status: Current state status
         raw_path: Generated path from RRT
         """
-    def __init__(self, state_name, fsm, goal_pos, map_size, obs, robot_bb, max_v, max_w):
+    def __init__(self, data,  state_name, goal_pos, map_size, obs, robot_bb, max_v, max_w):
         super().__init__(state_name)
-        self.fsm = fsm
         self.start = None
+
+        self.obs = data["obstacles"]    
 
         self.sim_time = 0.75 #sec/it
         self.max_it = 10000
-        self.rrt_planner = RRTPlanner(start=self.start, goal=goal_pos, map_size=map_size, obs=obs, 
+        self.rrt_planner = RRTPlanner(start=self.start, goal=goal_pos, map_size=map_size, obs=self.obs, 
                               robot_bb=robot_bb, vx=max_v, vw=max_w, dt=self.sim_time, max_it=self.max_it)
 
         self.pose_topic = '/robot_pose'
-        self.pose_sub = self.create_subscription(TFMessage, self.pose_topic, self.pose_cb, 1)
         self.frame = 'vehicle_blue'
+        self.pose_sub = self.create_subscription(TFMessage, self.pose_topic, self.pose_cb, 1)
+
+        self.optimization_config_client = self.create_client(CESOptimizeConfigure, 'ces_optimize_configure')
+        self.path_optimization_client = self.create_client(CESPathOptimize, 'ces_path_optimize')
 
         self.status = "STARTING"
 
         self.raw_path = []
+        self.optimized_path = []
 
     def execute_state(self):
         """
@@ -68,7 +76,8 @@ class PlanState(FSMState):
         """
 
         self.get_raw_path()
-
+        self.get_optimized_path()
+        self.status = "FINISHED"
 
     def get_status(self):
         """
@@ -90,12 +99,15 @@ class PlanState(FSMState):
         Returns:
             str: Transition code for FSM
         """
-        if self.raw_path:
-            self.fsm.wp_list = self.raw_path
-            return "PLAN_SUCCESS"
+        self.get_logger().info(f'{len(self.optimized_path)}')
+        if len(self.optimized_path) > 0:
+            return "PLAN_SUCCESS", {"path" : self.optimized_path}
         else:
-            return "PLAN_FAIL"
+            return "PLAN_FAIL", None
 
+    #Rewrite this to call CES Service
+    #Maybe rewrite RRT to service as well?
+    #Decouple plan state from logic
     def get_raw_path(self):
         """
         Generates path using RRT, updates status
@@ -110,11 +122,62 @@ class PlanState(FSMState):
             self.rrt_planner.grow_tree(self.start)
             if len(self.rrt_planner.get_path()) == 0:
                 self.get_logger().info("RRT Planning failed! Replanning until we find a valid path...")
-                self.rrt_planner.plot_tree()
         self.get_logger().info("RRT Planned Succesfully!")
         self.raw_path = self.rrt_planner.get_path()
-        plot_path(self.rrt_planner)
-        self.status = "FINISHED"
+
+        #Convert raw_path to Point for compatibility
+        path = [Point(x=float(p[0]), y=float(p[1]), z=0.0) for p in self.raw_path]
+        self.raw_path = path
+
+        self.plot_path(self.raw_path)
+        #self.status = "FINISHED"
+
+
+    '''
+    Maybe rewrite in the future to be more generic, to allow for more path planners/optimization schemes
+    '''
+    def get_optimized_path(self):
+        #Call Config service
+        self.configure_optimize_service()
+        #Call Optimize service
+        self.optimized_path = self.call_optimize_service()
+        self.plot_path(self.optimized_path)
+    def configure_optimize_service(self):
+        request = CESOptimizeConfigure.Request()
+
+        request.alpha_k = 10.0
+        request.rmin = 0.1
+        request.avg_velocity = 1.0
+        request.lower_radius = 0.05
+        request.upper_radius = 2.5
+
+        #Convert obs to geometry_msg/Polygon (Rewrite to be slimmer)
+        poly = []
+        for obstacle in self.obs:
+            coords = [Point32(x = x, y = y, z = 0.0) for x, y in obstacle.exterior.coords]
+            temp_poly = GeometryPolygon()
+            temp_poly.points = coords
+            poly.append(temp_poly)
+
+        request.obstacle_list = poly
+
+        future = self.optimization_config_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future)
+        self.get_logger().info("Optimize Configure Pass")
+
+        return future.result()
+
+
+    def call_optimize_service(self):
+        request = CESPathOptimize.Request()
+        request.path = self.raw_path
+        self.get_logger().info("Optimizer Pass")
+
+        future = self.path_optimization_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future)
+        self.get_logger().info("Optimizer Pass")
+        return future.result().optimized_path
+
 
     def pose_cb(self, msg):
         '''
@@ -154,6 +217,21 @@ class PlanState(FSMState):
         yaw = math.atan2(a, b)
 
         return yaw
+
+    def plot_path(self, path):
+        fig, ax = plt.subplots()
+
+        for obs in self.obs:
+            x,y = obs.exterior.xy
+            ax.fill(x,y,color='red')
+
+        path_x = [p.x for p in path]
+        path_y = [p.y for p in path]
+
+        ax.plot(path_x, path_y, color='orange', linewidth = 2)
+
+        plt.show()
+
 
 def plot_path(rrt_planner):
     """
