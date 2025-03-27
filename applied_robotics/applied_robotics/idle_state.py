@@ -28,9 +28,8 @@ class IdleState(FSMState):
         fsm: FSM reference for state transitions
     """
 
-    def __init__(self, state_name, fsm):
+    def __init__(self, state_name):
         super().__init__(state_name)
-        self.fsm = fsm
 
     def execute_state(self):
         """
