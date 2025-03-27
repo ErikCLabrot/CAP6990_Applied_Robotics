@@ -75,7 +75,7 @@ class PositionController():
         _publish_control(control): Publish control msg to cmd_vel
     '''
     
-    def __init__(self, node, pose_topic, vel_topic):
+    def __init__(self, node, pose_topic, vel_topic, odom_topic, use_pose=False):
         '''
         Init ros node and pos control vars
 
@@ -87,12 +87,16 @@ class PositionController():
         #ROS config
         self.node = node
         self.vel_pub = self.node.create_publisher(Twist, vel_topic, 1)
-        self.pose_sub = self.node.create_subscription(TFMessage, pose_topic, self._pose_cb, 1)
-        self.frame = "vehicle_blue"
+
+        if use_pose:
+            self.frame = "vehicle_blue"
+            self.pose_sub = self.node.create_subscription(TFMessage, pose_topic, self._pose_cb, 1)
+        else:
+            self.odometry_sub = self.node.create_subscription(Odometry, odom_topic, self._odom_callback, 1)
 
         #PID process variable controller config
-        self.linear_controller = PIDController(kp= 1.0, ki= 0.00, kd= 0.05, max_speed= 1.0)
-        self.angular_controller = PIDController(kp= 1.5, ki= 0.000, kd= 0.005, max_speed= 0.3)
+        self.linear_controller = PIDController(kp= 1.0, ki= 0.00, kd= 0.00, max_speed= 0.5)
+        self.angular_controller = PIDController(kp= 1.5, ki= 0.5, kd= 0.1, max_speed= 1.0)
 
         #Position Control process variable config
         self.start_pos = Point(x=0.0, y=0.0, z=0.0)
@@ -110,7 +114,7 @@ class PositionController():
         #Interal State Check Flags
         self.angle_reached = False
         self.running = False
-        self.accept_radius = 0.05
+        self.accept_radius = 0.15
         self.accept_angle = math.radians(0.005)
 
         #State Definitions
@@ -440,7 +444,16 @@ class PositionController():
                     )
                 r = tf.transform.rotation
 
-        self.theta = self._yaw_from_quat(r)
+    def _odom_callback(self, msg):
+        self.pos = Point(
+            x = msg.pose.pose.position.x,
+            y = msg.pose.pose.position.y,
+            z = 0.0
+            )
+
+        orientation = msg.pose.pose.orientation
+
+        self.theta = self._yaw_from_quat(orientation)
 
     def _publish_control(self, control):
         '''

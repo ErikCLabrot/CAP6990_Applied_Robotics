@@ -37,6 +37,7 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
         #include ros-gz-bridge config
         ('share/' + package_name + '/config',['config/gz_bridge.yaml']),
+        ('share/' + package_name + '/config',['config/node_config.yaml']),
     ] + model_files + world_files,
     install_requires=["setuptools"],
     zip_safe=True,
@@ -50,7 +51,9 @@ setup(
         'move_server = applied_robotics.move_server:main',
         'fsm_node = applied_robotics.fsm:main',
         'aruco_node = applied_robotics.aruco_detector:main',
-        'ces_service = applied_robotics.ces_service:main'
+        'ces_service = applied_robotics.ces_service:main',
+        'lidar_odometry_node = applied_robotics.icp_node:main',
+        'plot_node = applied_robotics.pose_plot_node:main',
         ],
     },
 )

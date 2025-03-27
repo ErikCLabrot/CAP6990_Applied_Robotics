@@ -15,6 +15,7 @@ from rclpy.action import ActionClient
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import Point, Twist, Quaternion, TransformStamped, Point32
 from geometry_msgs.msg import Polygon as GeometryPolygon
+from nav_msgs.msg import Odometry
 from shapely.geometry import Polygon as ShapelyPolygon
 from applied_robotics.fsm_state import FSMState
 from applied_robotics.rrt_planner import RRTPlanner
@@ -58,7 +59,15 @@ class PlanState(FSMState):
 
         self.pose_topic = '/robot_pose'
         self.frame = 'vehicle_blue'
-        self.pose_sub = self.create_subscription(TFMessage, self.pose_topic, self.pose_cb, 1)
+
+        use_pose = False
+
+        if use_pose:
+            self.pose_topic = '/robot_pose'
+            self.frame = 'vehicle_blue'
+            self.pose_sub = self.create_subscription(TFMessage, self.pose_topic, self.pose_cb, 1)
+        else:
+            self.odom_sub = self.create_subscription(Odometry, 'lidar/odometry', self.odometry_callback, 1)
 
         self.optimization_config_client = self.create_client(CESOptimizeConfigure, 'ces_optimize_configure')
         self.path_optimization_client = self.create_client(CESPathOptimize, 'ces_path_optimize')
@@ -101,6 +110,7 @@ class PlanState(FSMState):
         """
         self.get_logger().info(f'{len(self.optimized_path)}')
         if len(self.optimized_path) > 0:
+            self.optimized_path.pop(0)
             return "PLAN_SUCCESS", {"path" : self.optimized_path}
         else:
             return "PLAN_FAIL", None
@@ -129,7 +139,7 @@ class PlanState(FSMState):
         path = [Point(x=float(p[0]), y=float(p[1]), z=0.0) for p in self.raw_path]
         self.raw_path = path
 
-        self.plot_path(self.raw_path)
+        #self.plot_path(self.raw_path)
         #self.status = "FINISHED"
 
 
@@ -141,7 +151,7 @@ class PlanState(FSMState):
         self.configure_optimize_service()
         #Call Optimize service
         self.optimized_path = self.call_optimize_service()
-        self.plot_path(self.optimized_path)
+        #self.plot_path(self.optimized_path)
     def configure_optimize_service(self):
         request = CESOptimizeConfigure.Request()
 
@@ -201,6 +211,17 @@ class PlanState(FSMState):
         if self.start is None:
             self.start = (self.pos.x, self.pos.y, self.theta)
 
+    def odometry_callback(self, msg):
+        self.pos = Point(
+            x = msg.pose.pose.position.x,
+            y = msg.pose.pose.position.y,
+            z = 0.0)
+
+        orientation = msg.pose.pose.orientation
+        self.theta = self._yaw_from_quat(orientation)
+
+        if self.start is None:
+            self.start = (self.pos.x, self.pos.y, self.theta)
 
     def _yaw_from_quat(self, quat):
         '''

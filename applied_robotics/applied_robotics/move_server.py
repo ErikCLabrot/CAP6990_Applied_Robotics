@@ -47,7 +47,12 @@ class MoveServer(Node):
             execute_callback=self.execute_goal_cb,
             cancel_callback=self.cancel_callback
         )
-        self.pos_controller = PositionController(node=self, pose_topic=pose_topic, vel_topic=vel_topic)
+
+        self.pose_topic = self.declare_parameter('pose_topic', '/robot/pose').value
+        self.odometry_topic = self.declare_parameter('odometry_topic', '/robot/odometry').value
+        self.command_topic = self.declare_parameter('cmd_vel_topic', '/cmd_vel').value
+
+        self.pos_controller = PositionController(node=self, pose_topic=self.pose_topic, vel_topic=self.command_topic, odom_topic=self.odometry_topic ,use_pose=False )
 
     def execute_goal_cb(self, goal_handle):
         '''
