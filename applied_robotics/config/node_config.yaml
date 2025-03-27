@@ -1,0 +1,13 @@
+/**:
+  ros__parameters:
+    ground_truth_topic: "/robot_pose"
+    wheel_odometry_topic: "/wheel_odometry"
+    cmd_vel_topic: "/cmd_vel"
+    lidar_topic: "/lidar/laserscan"
+    lidar_odometry_topic: "/lidar/odometry"
+
+move_action_server:
+  ros__parameters:
+    pose_topic: "/robot_pose"
+    odometry_topic: "/lidar/odometry"
+
