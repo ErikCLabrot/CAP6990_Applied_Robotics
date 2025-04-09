@@ -1,0 +1,30 @@
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Compiled object files and binaries
+*.o
+*.so
+*.a
+*.out
+*.exe
+
+# Generated messages/services/actions
+rosidl_generator_cpp/
+rosidl_generator_py/
+rosidl_typesupport_*/
+
+# Misc
+*.DS_Store
+*.egg-info/
+.env
+.envrc
+.zip
+.mp4

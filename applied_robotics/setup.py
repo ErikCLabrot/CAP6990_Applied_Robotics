@@ -53,7 +53,9 @@ setup(
         'aruco_node = applied_robotics.aruco_detector:main',
         'ces_service = applied_robotics.ces_service:main',
         'lidar_odometry_node = applied_robotics.icp_node:main',
+        'ekf_node = applied_robotics.ekf_node:main',
         'plot_node = applied_robotics.pose_plot_node:main',
+        'lidar_variance_node = applied_robotics.lidar_variance_measurement:main'
         ],
     },
 )

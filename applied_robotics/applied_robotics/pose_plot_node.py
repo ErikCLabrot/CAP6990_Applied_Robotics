@@ -15,7 +15,7 @@ import math
 from rclpy.node import Node
 from tf2_msgs.msg import TFMessage
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Point, Twist, Quaternion, TransformStamped
+from geometry_msgs.msg import Pose, Point, Twist, Quaternion, TransformStamped
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib import style
@@ -57,15 +57,20 @@ class PosePlotNode(Node):
 
         self.ground_truth_topic = self.declare_parameter('ground_truth_topic', '/robot_pose').value
         self.lidar_odometry_topic = self.declare_parameter('lidar_odometry_topic', '/lidar/odometry').value
+        self.ekf_pose_topic = self.declare_parameter('ekf_state_topic', '/filtered_odometry').value
 
         self.ground_truth_sub = self.create_subscription(TFMessage, self.ground_truth_topic, self.ground_truth_callback, 1)
         self.lidar_odometry_sub = self.create_subscription(Odometry, self.lidar_odometry_topic, self.lidar_odometry_callback, 1)
+        self.filitered_odom_sub = self.create_subscription(Pose, self.ekf_pose_topic, self.filtered_odometry_callback, 1)
 
         self.ground_truth_x = []
         self.ground_truth_y = []
 
         self.lidar_odometry_x = []
         self.lidar_odometry_y = []
+
+        self.ekf_odometry_x = []
+        self.ekf_odometry_y = []
 
         self.error_magnitudes = [0.0,0.0]
 
@@ -75,8 +80,8 @@ class PosePlotNode(Node):
         self.pose_ax.set_title("Pose plotted over iterations")
         self.ground_truth_line, = self.pose_ax.plot([], [], label='Ground Truth', color='blue', marker='o')
         self.lidar_odometry_line, = self.pose_ax.plot([], [], label='LiDAR Odometry', color='red', marker='o')
+        self.ekf_odometry_line, = self.pose_ax.plot([], [], label='ekf', color='green', marker='o')
         self.pose_ax.legend()
-
 
         self.difference_fig, self.difference_ax = plt.subplots()
         self.difference_ax.set_ylim(0, 10) 
@@ -119,13 +124,18 @@ class PosePlotNode(Node):
         if len(self.error_magnitudes) > 100:
                 self.error_magnitudes.pop(0)
 
+    def filtered_odometry_callback(self, pose):
+        self.ekf_odometry_x.append(pose.position.x)
+        self.ekf_odometry_y.append(pose.position.y)
+
     def update_pose_plot(self, frame):
         '''
         Matplotlib animation update function for pose plot
         '''
         self.ground_truth_line.set_data(self.ground_truth_x, self.ground_truth_y)
         self.lidar_odometry_line.set_data(self.lidar_odometry_x, self.lidar_odometry_y)
-        return self.ground_truth_line, self.lidar_odometry_line
+        self.ekf_odometry_line.set_data(self.ekf_odometry_x, self.ekf_odometry_y)
+        return self.ground_truth_line, self.lidar_odometry_line, self.ekf_odometry_line
 
     def update_difference_plot(self, frame):
         '''
@@ -133,6 +143,10 @@ class PosePlotNode(Node):
         '''
         self.difference_line.set_data(list(range(len(self.error_magnitudes))), self.error_magnitudes)
         return (self.difference_line,)
+
+    def update_ekf_plot(self, frame):
+        self.ekf_pose_line.set_data(self.ekf_odometry_x, self.ekf_odometry_y)
+        return (self.ekf_pose_line,)
 
     def plot(self):
         '''
