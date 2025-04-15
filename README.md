@@ -1,13 +1,14 @@
-# CAP6990 Assignment 5
+# CAP6990 Assignment 6
 
 This code is hosted at the following repository:
 https://github.com/ErikCLabrot/CAP6990_Applied_Robotics
 
-CAP6990 Assignment 5 is an implementation of the Convex Elastic Smoothing Algorithm as presented by Zhu et al, found [here](https://web.stanford.edu/~pavone/papers/Zhu.Schmerling.ea.CDC15.pdf)
+CAP6990 Assignment 6 is an implementation of the Iterative Closest Point algorithm, applied to a simulated robot to provide LiDAR based Odometry. 
 
-This project takes a path produced by the RRT path planner from Assignment 4, applies the CES algorithm, then navigates a robot around an environment with obstacles placed in locations unknown to the robot.
+This project takes a LaserScan produced by the Gazebo Simulation, converts it to cartesian coordinates, applies the ICP algorithm, and integrates this 
+over time in order to provide an odometry estimate to the robot. This odometry is then used to supplant the ground truth information used in prior experiments.
 
-When the robot detects an obstacle it has not yet seen, it will stop, calculate a path to its goal using RRT, Optimize the path using the CES algorithm, then begin navigation again.
+Additionally, the difference between the LiDAR odometry and ground truth is plotted, to demonstrate how LiDAR based odometry drifts over time.
 
 ## Dependencies
 This project depends on the following to run:
@@ -25,7 +26,7 @@ This project depends on the following to run:
 ## Installation
 Create a functioning ROS2 Workspace by following the ROS2 Documentation found [here](https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html)
 
-Unzip the assignment3 folder into your ROS2 Workspace /src folder. You should have an applied_robotics and applied_robotics_utilities folder in your /src folder now.
+Unzip the folder into your ROS2 Workspace /src folder. You should have an applied_robotics and applied_robotics_utilities folder in your /src folder now.
 
 Navigate to the root of your workspace and build your workspace using
 
@@ -34,22 +35,21 @@ colcon build
 ```
 
 ## Usage
-A launch file to run the motion planning experiment is included in the /launch folder of the ROS workspace. This launch file will bring the simulation world up, launch the requisite ROS nodes, and prepare the experiment. The experiment is to successfully navigate the robot from (-8,-8) to (8,8) without colliding with any of the marker blocks.
-
-When the robot detects a cube it hasn't accounted for yet, it will stop and re-plan. The simulation thread will pause while the plot displaying the newly formulated path is shown. In order to continue the simulation, the plot must be closed after inspection. Additionally, a plot showing the smoothed CES path will appear after closing the RRT plot. This must also be closed for the simulation to continue.
-
-In order to launch the simulation, the following command may be used at command line:
+There are two launch files that can be used to experiment with the LiDAR Odometry. The first demonstrates the same experiment as assignment_5, the CES optimized RRT path finding, except 
+with LiDAR odometry instead of ground truth. This experiment can be launched using the following command at the command line:
 
 ```bash
-ros2 launch applied_robotics assignment_5.launch.py
+ros2 launch applied_robotics assignment_6.launch.py
 ```
 
-This will launch the Gazebo window, and begin displaying log output from the ROS nodes in the terminal. In order to begin the simulation, the play button in the Gazebo window must be pressed. This will then begin the sense-plan-move loop of the experiment.
+This will launch the Gazebo window, and begin displaying log output from the ROS nodes in the terminal, as well as open two plot windows. In order to begin the simulation, the play button in the Gazebo window must be pressed. This will then begin the sense-plan-move loop of the experiment.
 
-Additionally, a test script is supplied in the applied_robotics/applied_robotics folder. The ces_test.py file can be run by opening the folder in a shell, and running the following
+Additionally, a teleoperation launch file is provided to allow for manual control of the robot, while still plotting and demonstrating the difference between LiDAR odometry and ground truth.
+This launch file uses the teleoperation_twist_keyboard ROS package. Launching this will open the main Gazebo window, the plot windows, and an additional terminal presuming the project is being 
+run in an ubuntu environment. With the additional terminal window for the teleop package open, the robot can be controlled as displayed by the package in the terminal.
+
+This teleoperation experiment can be launched using the following at the command line:
 
 ```bash
-python3 ces_test.py
+ros2 launch applied_robotics teleop.launch.py
 ```
-
-This test script contains a plot function and helper functions, as well as the CES algorithm removed from ROS. This allows for the CES algorithm operation to be verified independent of ROS.
