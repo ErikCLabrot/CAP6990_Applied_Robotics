@@ -45,19 +45,6 @@ def generate_launch_description():
 
         Node(
             package='applied_robotics',
-            executable='plot_node',
-            parameters=[config]
-        ),
-        Node(
-            package='applied_robotics',
-            executable='ekf_node',
-            parameters=[config]
-        ),
-        Node(
-            package='teleop_twist_keyboard',
-            executable='teleop_twist_keyboard',
-            prefix='gnome-terminal --',
-            name='teleop_twist_keyboard',
-            output='screen'
-        ),
+            executable='lidar_variance_node',
+            parameters=[config])
     ])

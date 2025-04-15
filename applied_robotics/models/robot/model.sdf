@@ -11,7 +11,7 @@
         <link name='chassis'>
             <pose relative_to='__model__'>0.5 0 0.4 0 0 0</pose>
             <inertial> <!--inertial properties of the link mass, inertia matix-->
-                <mass>1.14395</mass>
+                <mass>10.14395</mass>
                 <inertia>
                     <ixx>0.126164</ixx>
                     <ixy>0</ixy>
@@ -150,6 +150,34 @@
         <joint name="lidar_joint" type="fixed">
             <parent>chassis</parent>
             <child>lidar</child>
+        </joint>
+
+        <link name="imu_link">
+            <pose relative_to="chassis">-0.5 0 0 0 0 0</pose>
+            <sensor name='imu_sensor' type='imu'>"
+                <pose relative_to='imu_frame'>0 0 0 0 0 0</pose>
+                  <update_rate>100</update_rate> 
+                  <topic>imu</topic>
+                  <imu>
+                    <angular_velocity>
+                      <noise type="gaussian">
+                        <mean>0.0</mean>
+                        <stddev>0.01</stddev> 
+                      </noise>
+                    </angular_velocity>
+                    <linear_acceleration>
+                      <noise type="gaussian">
+                        <mean>0.0</mean>
+                        <stddev>0.1</stddev> 
+                      </noise>
+                    </linear_acceleration>
+                  </imu>
+              </sensor>
+        </link>
+
+        <joint name="imu_joint" type="fixed">
+            <parent>chassis</parent>
+            <child>imu_link</child>
         </joint>
 
         <!--let's build the left wheel-->
