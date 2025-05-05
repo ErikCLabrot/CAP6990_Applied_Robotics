@@ -55,7 +55,9 @@ setup(
         'lidar_odometry_node = applied_robotics.icp_node:main',
         'ekf_node = applied_robotics.ekf_node:main',
         'plot_node = applied_robotics.pose_plot_node:main',
-        'lidar_variance_node = applied_robotics.lidar_variance_measurement:main'
+        'lidar_variance_node = applied_robotics.lidar_variance_measurement:main',
+        'landmark_detector_node = applied_robotics.landmark_detector_node:main',
+        'graph_logger_node = applied_robotics.pose_graph_collection:main',
         ],
     },
 )

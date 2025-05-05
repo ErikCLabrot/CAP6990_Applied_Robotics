@@ -19,6 +19,8 @@ from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import Point, Pose, PoseArray
+from nav_msgs.msg import Odometry
+from applied_robotics_utilities.msg import LandmarkArray, LandmarkObservation
 
 class ArucoDetector(Node):
     """
@@ -36,7 +38,7 @@ class ArucoDetector(Node):
     Attributes:
         aruco_dict: Aruco dictionary for marker detection
         aruco_params: Aruco detector parameters
-        markerSize: Physical size of markers in meters
+        marker_size: Physical size of markers in meters
         bridge: CV Bridge for converting ROS Image messages to OpenCV images
         detected_cubes: Dictionary of detected cube IDs
         detected_cube_pos: Dictionary of cube positions in C-space
@@ -55,12 +57,23 @@ class ArucoDetector(Node):
         obs_pub: Publisher for detected obstacles as PoseArray
     """
 
-    def __init__(self, img_topic, info_topic, pose_topic, markerSize=0.4, aruco_dict=cv.aruco.DICT_6X6_250):
+    def __init__(self, aruco_dict=cv.aruco.DICT_6X6_250):
         super().__init__("aruco_node")
+
+        self.image_topic = self.declare_parameter('camera_topic', '/camera/image').value
+        self.image_info_topic = self.declare_parameter('camera_info_topic', '/camera/info').value
+        self.odometry_topic = self.declare_parameter('odometry_topic', '/robot/odometry').value
+        self.ekf_state_topic = self.declare_parameter('ekf_state_topic', '/filtered_odometry').value
+        self.landmark_topic = self.declare_parameter('landmark_observation_topic', '/landmarks').value
+
+        self.start_position = self.declare_parameter('world_start_position', [0.0,0.0,0.0]).value
+        self.start_orientation = self.declare_parameter('world_start_orientation', 0.0).value
+
+        self.marker_size = self.declare_parameter('aruco_marker_size', 0.4).value
+
         # aruco detector
         self.aruco_dict = cv.aruco.getPredefinedDictionary(aruco_dict)
         self.aruco_params = cv.aruco.DetectorParameters.create()
-        self.markerSize = markerSize  # meters
         self.bridge = CvBridge()
 
         self.detected_cubes = {}
@@ -74,39 +87,42 @@ class ArucoDetector(Node):
         self.info_ready = False
         self.pose_ready = False
 
-        self.robot_pos = Point(x=0.0, y=0.0, z=0.0)
-        self.robot_yaw = 0.0  # rads
-        self.frame = 'vehicle_blue'
+        self.robot_pos = Point(x=self.start_position[0], y=self.start_position[1], z=0.0)
+        self.robot_yaw = self.start_orientation  # rads
 
-        self.image_sub = self.create_subscription(Image, img_topic, self.image_cb, 1)
-        self.info_sub = self.create_subscription(CameraInfo, info_topic, self.caminfo_cb, 1)
-        self.pose_sub = self.create_subscription(TFMessage, pose_topic, self.pose_cb, 1)
-        self.obs_pub = self.create_publisher(PoseArray, '/obstacles', 1)
+        self.image_sub = self.create_subscription(Image, self.image_topic, self.image_callback, 1)
+        self.info_sub = self.create_subscription(CameraInfo, self.image_info_topic, self.caminfo_callback, 1)
+        self.odometry_sub = self.create_subscription(Odometry, self.ekf_state_topic, self.odometry_callback, 1)
+        self.obstacle_pub = self.create_publisher(LandmarkArray, self.landmark_topic, 1)
 
-        # Timer to periodically publish all detected cubes as an array
-        self.create_timer(0.1, self.publish_obs)
-
-    def image_cb(self, img_msg):
+    def image_callback(self, img_msg):
         """
         Processes image to detect Aruco markers
 
         Args:
             img_msg (Image): Image message
         """
-        if self.info_ready is not True:
+        if self.info_ready is not True or self.pose_ready is not True:
             return
 
         cv_img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding="bgr8")
         gray = cv.cvtColor(cv_img, cv.COLOR_BGR2GRAY)
-        crnrs, ids, _ = cv.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.aruco_params)
+        corners, ids, _ = cv.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.aruco_params)
+
+        cubes = []
+
         if ids is not None:
             for i, marker_id in enumerate(ids):
                 cube_id = marker_id[0] // 6
-                if cube_id not in self.detected_cubes and self.pose_ready and self.info_ready:
-                    self.detected_cubes[cube_id] = True
-                    self.find_tf(crnrs[i], cube_id)
+                cube_pos = self.find_tf(corners=corners[i], cube_id=cube_id)
 
-    def caminfo_cb(self, info_msg):
+                if cube_pos is not None:
+                    cubes.append([cube_id, cube_pos])
+
+            if cubes:
+                self.publish_obstacles(cubes)
+
+    def caminfo_callback(self, info_msg):
         """
         Retrieves camera intrinsic parameters
 
@@ -118,17 +134,12 @@ class ArucoDetector(Node):
         self.dist_coeffs = np.array(info_msg.d)
         self.info_ready = True
 
-    def pose_cb(self, pose_msg):
-        for tf in pose_msg.transforms:
-            if tf.child_frame_id == self.frame:
-                self.robot_pos = Point(
-                    x=tf.transform.translation.x,
-                    y=tf.transform.translation.y,
-                    z=tf.transform.translation.z
-                )
-                r = tf.transform.rotation
-                self.robot_yaw = self._yaw_from_quat(r)
-                self.pose_ready = True
+    def odometry_callback(self, odometry):
+        self.pose_ready = True
+
+        self.robot_pos = odometry.pose.pose.position
+        orientation = odometry.pose.pose.orientation
+        self.robot_yaw = self._yaw_from_quat(quat=orientation)
 
     def _yaw_from_quat(self, quat):
         '''
@@ -160,50 +171,50 @@ class ArucoDetector(Node):
 
         cube_size = 1.0
 
-        marker_points = np.array([[-self.markerSize / 2, self.markerSize / 2, 0],
-                                  [self.markerSize / 2, self.markerSize / 2, 0],
-                                  [self.markerSize / 2, -self.markerSize / 2, 0],
-                                  [-self.markerSize / 2, -self.markerSize / 2, 0]], dtype=np.float32)
+        marker_points = np.array([[-self.marker_size / 2, self.marker_size / 2, 0],
+                                  [self.marker_size / 2, self.marker_size / 2, 0],
+                                  [self.marker_size / 2, -self.marker_size / 2, 0],
+                                  [-self.marker_size / 2, -self.marker_size / 2, 0]], dtype=np.float32)
 
-        s, r, t = cv.solvePnP(marker_points, corners, self.camera_matrix, self.dist_coeffs, False, cv.SOLVEPNP_IPPE_SQUARE)
-        if s:
-            r_mat, _ = cv.Rodrigues(r)
-            v_cube_center = np.array([[0.0], [0.0], [-cube_size / 2]])  # vec aruco to cube center
+        success, rotation_vec, translation_vec = cv.solvePnP(marker_points, corners, self.camera_matrix, self.dist_coeffs, False, cv.SOLVEPNP_IPPE_SQUARE)
+        if success:
+            rot_camera_to_marker, _ = cv.Rodrigues(rotation_vec)
 
-            v_cam_cc = t + (r_mat @ v_cube_center)  # tf cube to cam
+            marker_to_cube_center = np.array([[0.0], [0.0], [-cube_size / 2]])
+            cube_pos_in_camera_frame = translation_vec + rot_camera_to_marker @ marker_to_cube_center
 
-            rob_x = v_cam_cc[2][0]  # cam_z = rob_x
-            rob_y = -v_cam_cc[0][0]  # -cam_x = rob_y
+            t_cx = 1.0  # in meters
+            t_cy = 0.0
 
-            c_x = (t_cx * np.cos(self.robot_yaw) - t_cy * np.sin(self.robot_yaw))  # Cam to cspace tf
-            c_y = (t_cx * np.sin(self.robot_yaw) + t_cy * np.cos(self.robot_yaw))
+            # Cube position relative to robot frame:
+            cam_x = cube_pos_in_camera_frame[0][0]
+            cam_y = cube_pos_in_camera_frame[1][0]
+            cam_z = cube_pos_in_camera_frame[2][0]
 
-            # cube coords in cspace
-            cube_cspace_x = self.robot_pos.x + c_x + (rob_x * np.cos(self.robot_yaw) - rob_y * np.sin(self.robot_yaw))
-            cube_cspace_y = self.robot_pos.y + c_y + (rob_x * np.sin(self.robot_yaw) + rob_y * np.cos(self.robot_yaw))
+            # In robot frame:
+            cube_rel_x = t_cx + cam_z  # forward
+            cube_rel_y = t_cy - cam_x  # left (note: -cam_x since cam x = right)
 
-            # pub new cube
-            point = Point()
-            point.x = cube_cspace_x
-            point.y = cube_cspace_y
-            point.z = 0.0
-            self.get_logger().info(f'Detected Cube! ID = {cube_id}: Cspace Coords: {cube_cspace_x}, {cube_cspace_y}')
+            relative_tf = Point(x=cube_rel_x, y=cube_rel_y, z=0.0)
 
-            self.detected_cube_pos[cube_id] = point
+            return relative_tf
 
-    def publish_obs(self):
+        return None
+
+    def publish_obstacles(self, cubes):
         '''
         Publish all detected cubes as a PoseArray
         '''
-        pose_array = PoseArray()
+        cube_array = LandmarkArray()
 
-        for cube_pos in self.detected_cube_pos:
-            pose = Pose()
-            pose.position = self.detected_cube_pos[cube_pos]
-            pose.orientation.w = 1.0  
-            pose_array.poses.append(pose)
+        for cube in cubes: 
+            self.get_logger().info(f'{cube}')
+            observation = LandmarkObservation()
+            observation.id = int(cube[0])
+            observation.position = cube[1]
+            cube_array.observations.append(observation)
 
-        self.obs_pub.publish(pose_array)
+        self.obstacle_pub.publish(cube_array)
 
     def get_ids(self):
         """
@@ -224,7 +235,7 @@ def main(args=None):
     info_topic = '/camera/info'
     pose_topic = '/robot_pose'
     marker_size = 0.4 #m
-    node = ArucoDetector(img_topic=image_topic,info_topic=info_topic,pose_topic=pose_topic, markerSize=marker_size)
+    node = ArucoDetector()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

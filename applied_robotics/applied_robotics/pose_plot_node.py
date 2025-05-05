@@ -61,7 +61,7 @@ class PosePlotNode(Node):
 
         self.ground_truth_sub = self.create_subscription(TFMessage, self.ground_truth_topic, self.ground_truth_callback, 1)
         self.lidar_odometry_sub = self.create_subscription(Odometry, self.lidar_odometry_topic, self.lidar_odometry_callback, 1)
-        self.filitered_odom_sub = self.create_subscription(Pose, self.ekf_pose_topic, self.filtered_odometry_callback, 1)
+        self.filitered_odom_sub = self.create_subscription(Odometry, self.ekf_pose_topic, self.filtered_odometry_callback, 1)
 
         self.ground_truth_x = []
         self.ground_truth_y = []
@@ -125,15 +125,16 @@ class PosePlotNode(Node):
                 self.error_magnitudes.pop(0)
 
     def filtered_odometry_callback(self, pose):
-        self.ekf_odometry_x.append(pose.position.x)
-        self.ekf_odometry_y.append(pose.position.y)
+        self.get_logger().info(f'Plot node got ekf data')
+        self.ekf_odometry_x.append(pose.pose.pose.position.x)
+        self.ekf_odometry_y.append(pose.pose.pose.position.y)
 
     def update_pose_plot(self, frame):
         '''
         Matplotlib animation update function for pose plot
         '''
         self.ground_truth_line.set_data(self.ground_truth_x, self.ground_truth_y)
-        self.lidar_odometry_line.set_data(self.lidar_odometry_x, self.lidar_odometry_y)
+        #self.lidar_odometry_line.set_data(self.lidar_odometry_x, self.lidar_odometry_y)
         self.ekf_odometry_line.set_data(self.ekf_odometry_x, self.ekf_odometry_y)
         return self.ground_truth_line, self.lidar_odometry_line, self.ekf_odometry_line
 
