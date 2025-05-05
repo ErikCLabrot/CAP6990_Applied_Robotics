@@ -62,7 +62,7 @@ class EKF_Node(Node):
         self.imu_sensor_sub = self.create_subscription(Imu, self.imu_sensor_topic, self.imu_sensor_callback, 1)
 
         #Init Pubs
-        self.ekf_state_pub = self.create_publisher(Pose, self.ekf_state_topic, 1)
+        self.ekf_state_pub = self.create_publisher(Odometry, self.ekf_state_topic, 1)
 
         #Init EKF class
         start_x = self.start_position[0]
@@ -126,14 +126,17 @@ class EKF_Node(Node):
         self.ekf_state_estimator.predict(imu_angular_rate = imu_angular_velocity, imu_linear_acceleration = imu_linear_acceleration)
         
         self.state_vector = self.ekf_state_estimator.get_state()
-        self.get_logger().info(f'State post predict: {self.state_vector}')
+        #self.get_logger().info(f'State post predict: {self.state_vector}')
 
-        self.publish_state()
+        #self.publish_state()
 
     def publish_state(self):
         '''
         Publish relevant information from current state as a ROS Pose message (x, y, theta)
         '''
+
+        state_covariance = self.ekf_state_estimator.get_state_covariance()
+
         current_position = Point()
 
         current_position.x = self.state_vector[0,0]
@@ -145,7 +148,25 @@ class EKF_Node(Node):
 
         current_pose = Pose(position = current_position, orientation = current_orientation)
 
-        self.ekf_state_pub.publish(current_pose)
+        velocity_x = self.state_vector[3,0]
+        velocity_w = self.state_vector[4,0]
+
+        current_twist = Twist(linear=Vector3(x=velocity_x,y=0.0,z=0.0),angular=Vector3(x=0.0,y=0.0,z=velocity_w))
+
+        covariance_matrix = np.zeros((6,6))
+        covariance_matrix[:3, :3] = self.ekf_state_estimator.get_state_covariance()[:3,:3] 
+        covariance_list = covariance_matrix.flatten().tolist()
+        odometry_message = Odometry()
+
+        odometry_message.pose.pose = current_pose
+        odometry_message.pose.covariance = covariance_list
+        odometry_message.twist.twist = current_twist
+
+        self.ekf_state_pub.publish(odometry_message)
+
+
+        #self.get_logger().info(f'{odometry_message}')
+
 
 def main(args=None):
     rclpy.init(args=args)
