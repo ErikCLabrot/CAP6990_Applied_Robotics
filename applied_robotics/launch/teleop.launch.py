@@ -45,12 +45,19 @@ def generate_launch_description():
 
         Node(
             package='applied_robotics',
-            executable='plot_node',
+            executable='ekf_node',
             parameters=[config]
         ),
+
+
         Node(
             package='applied_robotics',
-            executable='ekf_node',
+            executable='landmark_detector_node',
+            parameters=[config]
+            ),
+        Node(
+            package='applied_robotics',
+            executable='graph_logger_node',
             parameters=[config]
         ),
         Node(

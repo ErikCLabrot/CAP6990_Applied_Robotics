@@ -72,6 +72,9 @@ class ekf():
         '''Function to get the state vector'''
         return self.state_vector
 
+    def get_state_covariance(self):
+        return self.state_covariance
+
     def predict(self, imu_angular_rate, imu_linear_acceleration):
         '''
         Predict step of Extended Kalman Filter, using control inputs and dynamics

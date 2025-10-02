@@ -1,17 +1,16 @@
-# CAP6990 Assignment 7
+# CAP6990 Assignment 8
 
 This code is hosted at the following repository:
 https://github.com/ErikCLabrot/CAP6990_Applied_Robotics
 
-CAP6990 Assignment 7 is an implementation of an extended kalman filter, intended to improve the odometry estimate of the lidar odometry system. Additionally,
-improvements were made to the odometry system developed in assignment 6, based on the ICP system described in the [KISS-ICP](https://www.ipb.uni-bonn.de/wp-content/papercite-data/pdf/vizzo2023ral.pdf)
+CAP6990 Assignment 7 is an implementation of an offline graph slam pipeline. Data is recorded and written to a file in a manner similar to the g2o format. This data is then used
+to construct a pose graph optimization problem in ceres, run the problem, and validate the output with plots and calculations.
 
-This project implements an EKF that uses a simulated IMU with associated noise to sense the effects of control inputs applied to the robot. This is used in the 'predict' step of the EKF. Lidar Odometry
-is used in the Update step to correct the short term noise and uncertainty of the imu with a more stable odometry estimate, albeit, one that drifts over time. This sensor fusion results in an over all improvmenet to the state estimate for the robot, staying very close to ground truth.
+Additionally, there is a non-working implementation of the same pipeline using NLOpt contained in the project for future development and refinement.
 
-Additionally, improvements to the Lidar Odometry system were implemented. The euclidean nearest neighbor search was replaced with a KDTree (First with a custom implementation, then a library). The point cloud is downsampled using a voxelization schema, and a predicitve outlier filtering schema is implemented. This alterations make the ICP algorithm more robust, and prevent it from drifting for far longer. Most importantly, however, is that it does a far better job of estimating the immediate frame to frame odometry, which in turn feeds into the EKF for improvement.
+Features are landmarked by aruco markers on the sides of obstacles in the environment. There is a semi-complete implementation of a lidar based landmarking feature. See the file 
+in question for more details.
 
-This project is demonstrated primarily using teleop so that situations can be created that are designed to be difficult for the lidar odometry and EKF to handle, such as 'wiggling', spinning in place, and long linear translations in a feature-sparse environment. 
 
 ## Dependencies
 This project depends on the following to run:
@@ -28,6 +27,8 @@ This project depends on the following to run:
 
 [SciPy](https://scipy.org/) - primarily for KDTree in the Lidar Odometry
 
+[CERES] http://ceres-solver.org/
+
 ## Installation
 Create a functioning ROS2 Workspace by following the ROS2 Documentation found [here](https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html)
 
@@ -39,14 +40,44 @@ Navigate to the root of your workspace and build your workspace using
 colcon build
 ```
 
-## Usage
-The primary launch file for this project launches a teleoperation demo using the teleop-twist-keyboard ROS package. This allows the robot to be controlled at different velocities and in different manners to attempt to 'force' the odometry into situations that are difficult for it to keep a good estimate in. These situations include oscillatory rotational motion (i.e. wiggling), close translations near boxes, translations through areas where there are few lidar features to calculate points off of, etc.
+A pre-compiled optimizer solution is provided in the offline_graph_optimizer. A CMakeLists.txt is also provided in case you'd like to build it yourself. Navigate to the build directory, and run the following (NOTE: Requires a c++17 compatible compiler)
 
 ```bash
-ros2 launch applied_robotics assignment_7.launch.py
+cmake ..
+make
 ```
 
-This will launch the Gazebo window, and begin displaying log output from the ROS nodes in the terminal, as well as open two plot windows. In order to begin the simulation, the play button in the Gazebo window must be pressed. This will then begin the sense-plan-move loop of the experiment.
+## Usage
+Collecting data can be performed by running the following command:
 
-The instructions for controlling the robot through teleoperation can be read in the additional terminal window that opens. The recommended speed values that reflect the robots autonomous motion control values are a linear velocity of roughly 1m/s, and a rotational velocity of 0.5rad/s. 
+```
+ros2 launch applied_robotics assignment_8.launch.py
+```
 
+This will create 3 files in the root of your workspace: ground_truth_poses.txt, laserscans.txt, pose_graph_log.txt. Copy these files, and move them to the data directory of offline_graph_optimizer.
+Then, navigate to the build folder of offline_graph_optimizer.
+
+The graph can be optimized by running the following:
+```bash
+./graph_slam_solver ../data/pose_graph_log.txt
+```
+This will run the solver, and produce a file in the data folder: graph_slam_result.txt
+
+Two additonal python scripts are contained in the data folder to assist in data visualization.
+
+graph_slam_plotter.py will produce a graph of the 3 different trajectories: ground_truth, EKF, and slam_optimized. It will also calculate the RMSE. If the results are not to your liking, 
+then edit the info scaling factors in the .cpp file for graph_slam_optimizer, build the project again, and run with the same data. Increasing/decreasing the reliance on landmarks can sometimes
+bring the graph in a little better.
+
+You can run graph_slam_plotter with the following:
+
+```bash
+python3 graph_slam_solver.py
+```
+
+Likewise, there's also a script that will take the saved laserscans in laserscan.txt (which are actually deskewed coordinates, so these files are candidates for renaming in the future), 
+compute the necessary transforms, and plot the ekf and graph-slam points, as well as the ground truth points for comparison. This can be run by:
+
+```bash
+python3 laserscan_plotter.py
+```
